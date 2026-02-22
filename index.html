@@ -410,12 +410,12 @@
 
       <div class="divider"></div>
 
-      <!-- ✅ NEW: Bible Reading Dates Log -->
+      <!-- Bible Reading Dates Log -->
       <div class="scriptureBox">
         <div class="row" style="align-items:center;">
           <div style="flex:1;">
             <strong>Bible Reading Dates 📖</strong>
-            <div class="small">Log dates you read your Bible (great for streaks + proof of consistency).</div>
+            <div class="small">Log dates you read your Bible (great for streaks + consistency).</div>
           </div>
         </div>
 
@@ -460,7 +460,6 @@
           <label><input type="checkbox" id="dailyFood"> Food On Plan ✅</label>
         </div>
 
-        <!-- Workout details, calories, meals, water 40oz+ -->
         <div class="divider"></div>
 
         <div class="row">
@@ -506,12 +505,13 @@
 
         <div class="row" style="margin-top:10px;">
           <button class="btn" onclick="saveDaily()">Save Daily Check-In</button>
+          <button class="btn light" onclick="clearDailyForm()">Clear Form</button>
         </div>
 
         <div id="dailyMsg" class="ok"></div>
 
         <div class="divider"></div>
-        <strong>Recent Daily Notes</strong>
+        <strong>Recent Daily Check-Ins</strong>
         <div id="dailyList" style="margin-top:10px;"></div>
       </div>
 
@@ -574,7 +574,7 @@ const GOAL = {
 };
 
 /* =======================
-   STORAGE KEYS (separate from your real estate CRM)
+   STORAGE KEYS
 ======================= */
 const KEY_AUTH_USER = "LBH_auth_user_v1";
 const KEY_AUTH_HASH = "LBH_auth_hash_v1";
@@ -729,6 +729,12 @@ function setDefaultBibleLogDate(){
   el.value = toISODate(new Date());
 }
 
+function scrollToDailyForm(){
+  const el = document.getElementById("dailyDate");
+  if(!el) return;
+  el.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
 /* =======================
    AUTH (client-side)
 ======================= */
@@ -799,7 +805,6 @@ function logout(){
   showAuth();
 }
 
-/* Reset only this Health CRM data (NOT your real estate CRM) */
 function resetApp(){
   const ok = confirm("This will clear the Health CRM login + data on this browser only. Continue?");
   if(!ok) return;
@@ -825,15 +830,12 @@ function initApp(username){
   setDefaultFridayDate();
   setDefaultBibleLogDate();
 
-  // Scripture render
   if(currentScripture === "proverbs31") showProverbs31();
   else if(currentScripture === "proverbs") showProverbs();
   else showPsalm();
 
-  // load last bible read checkbox for today (from daily logs if exists)
   syncBibleCheckboxForToday();
 
-  // render all
   renderDailyList();
   renderWeighInList();
   renderWeighInChart();
@@ -842,7 +844,6 @@ function initApp(username){
   updateKPIs();
 }
 
-/* auto-login if session exists */
 window.addEventListener("load", ()=>{
   const hasAccount = !!localStorage.getItem(KEY_AUTH_HASH) && !!localStorage.getItem(KEY_AUTH_USER);
   const session = localStorage.getItem(KEY_SESSION) === "1";
@@ -878,17 +879,14 @@ function showProverbs31(){
 }
 
 /* =======================
-   BIBLE READING DATES LOG
-   (stored inside dailyLogs as bibleRead=true, with optional bibleNote)
+   BIBLE DATES LOG
 ======================= */
 function saveBibleLog(){
   const date = (document.getElementById("bibleLogDate").value || "").trim();
   const note = (document.getElementById("bibleLogNote").value || "").trim();
   if(!date){ alert("Please pick a date."); return; }
 
-  // Find existing daily log for that date or create one
   const idx = dailyLogs.findIndex(d=>d.date===date);
-
   const base = idx >= 0 ? dailyLogs[idx] : {
     date,
     workout: false,
@@ -901,7 +899,6 @@ function saveBibleLog(){
     water40plus: false
   };
 
-  // Force bibleRead true + store optional note
   const updated = {
     ...base,
     bibleRead: true,
@@ -911,11 +908,9 @@ function saveBibleLog(){
   if(idx >= 0) dailyLogs[idx] = updated;
   else dailyLogs.push(updated);
 
-  // Sort newest first
   dailyLogs.sort((a,b)=> (a.date < b.date ? 1 : -1));
   saveDailyToStorage();
 
-  // If logging for today, sync checkbox
   const today = toISODate(new Date());
   if(date === today){
     const bible = document.getElementById("bibleRead");
@@ -932,31 +927,25 @@ function getBibleReadDatesSortedAsc(){
   const dates = dailyLogs
     .filter(d => d && d.date && d.bibleRead === true)
     .map(d => d.date);
-
-  // unique
   const uniq = Array.from(new Set(dates));
   uniq.sort((a,b)=> (a > b ? 1 : -1));
   return uniq;
 }
 
 function calcBibleStreak(){
-  // streak ending today (consecutive days)
   const datesAsc = getBibleReadDatesSortedAsc();
   if(datesAsc.length === 0) return 0;
 
   const set = new Set(datesAsc);
   let streak = 0;
-  let cur = new Date();
-  cur = new Date(toISODate(cur) + "T00:00:00");
+  let cur = new Date(toISODate(new Date()) + "T00:00:00");
 
   while(true){
     const key = toISODate(cur);
     if(set.has(key)){
       streak++;
       cur.setDate(cur.getDate()-1);
-    } else {
-      break;
-    }
+    } else break;
   }
   return streak;
 }
@@ -979,9 +968,7 @@ function renderBibleDates(){
     return;
   }
 
-  // Show most recent 10 (descending)
   const datesDesc = datesAsc.slice().reverse().slice(0,10);
-
   listEl.innerHTML = datesDesc.map(date=>{
     const rec = dailyLogs.find(d=>d.date===date);
     const note = rec && rec.bibleNote ? rec.bibleNote.trim() : "";
@@ -1012,9 +999,7 @@ function deleteBibleDate(date){
   const idx = dailyLogs.findIndex(d=>d.date===date);
   if(idx < 0) return;
 
-  // If the day has other health info, just set bibleRead false; otherwise remove the entry
   const d = dailyLogs[idx];
-
   const hasOtherData =
     (d.workout === true) ||
     (d.foodOnPlan === true) ||
@@ -1033,7 +1018,6 @@ function deleteBibleDate(date){
   dailyLogs.sort((a,b)=> (a.date < b.date ? 1 : -1));
   saveDailyToStorage();
 
-  // If today, uncheck
   const today = toISODate(new Date());
   if(date === today){
     const bible = document.getElementById("bibleRead");
@@ -1046,7 +1030,7 @@ function deleteBibleDate(date){
 }
 
 /* =======================
-   DAILY CHECK-IN
+   DAILY CHECK-IN (NOW WITH EDIT + DELETE)
 ======================= */
 function syncBibleCheckboxForToday(){
   const today = toISODate(new Date());
@@ -1056,12 +1040,29 @@ function syncBibleCheckboxForToday(){
   bible.checked = !!(log && log.bibleRead);
 }
 
+function clearDailyForm(){
+  setDefaultDailyDate();
+  document.getElementById("dailyWorkout").checked = false;
+  document.getElementById("dailyFood").checked = false;
+  document.getElementById("dailyWorkoutText").value = "";
+  document.getElementById("dailyCalories").value = "";
+  document.getElementById("dailyMeals").value = "";
+  document.getElementById("dailyWater40").checked = false;
+  document.getElementById("dailyJournal").value = "";
+
+  // leave bibleRead checkbox as-is for today
+  const msg = document.getElementById("dailyMsg");
+  msg.textContent = "";
+}
+
 function saveDaily(){
   const date = (document.getElementById("dailyDate").value || "").trim();
   if(!date){ return; }
 
   const caloriesRaw = parseInt(document.getElementById("dailyCalories").value, 10);
   const caloriesVal = Number.isFinite(caloriesRaw) ? caloriesRaw : null;
+
+  const idx = dailyLogs.findIndex(d=>d.date===date);
 
   const entry = {
     date,
@@ -1076,9 +1077,7 @@ function saveDaily(){
     water40plus: !!document.getElementById("dailyWater40").checked
   };
 
-  const idx = dailyLogs.findIndex(d=>d.date===date);
-
-  // preserve bibleNote if it exists already
+  // preserve bibleNote if already exists
   if(idx >= 0 && dailyLogs[idx] && dailyLogs[idx].bibleNote){
     entry.bibleNote = dailyLogs[idx].bibleNote;
   }
@@ -1092,11 +1091,61 @@ function saveDaily(){
   const msg = document.getElementById("dailyMsg");
   msg.textContent = "Saved. You showed up today 💜";
 
-  document.getElementById("dailyJournal").value = "";
+  // After save, keep the date (so you can keep editing same day if you want)
+  // But we can clear the text fields to reduce clutter:
   document.getElementById("dailyWorkoutText").value = "";
   document.getElementById("dailyCalories").value = "";
   document.getElementById("dailyMeals").value = "";
   document.getElementById("dailyWater40").checked = false;
+  document.getElementById("dailyJournal").value = "";
+
+  renderDailyList();
+  renderBibleDates();
+  updateKPIs();
+}
+
+function editDaily(date){
+  const rec = dailyLogs.find(d=>d.date===date);
+  if(!rec) return;
+
+  document.getElementById("dailyDate").value = rec.date;
+  document.getElementById("dailyWorkout").checked = !!rec.workout;
+  document.getElementById("dailyFood").checked = !!rec.foodOnPlan;
+
+  document.getElementById("dailyWorkoutText").value = rec.workoutText || "";
+  document.getElementById("dailyCalories").value = (typeof rec.calories === "number") ? String(rec.calories) : "";
+  document.getElementById("dailyMeals").value = rec.meals || "";
+  document.getElementById("dailyWater40").checked = !!rec.water40plus;
+
+  document.getElementById("dailyJournal").value = rec.journal || "";
+
+  // If editing TODAY, sync the big Bible checkbox
+  const today = toISODate(new Date());
+  if(rec.date === today){
+    const bible = document.getElementById("bibleRead");
+    if(bible) bible.checked = !!rec.bibleRead;
+  }
+
+  const msg = document.getElementById("dailyMsg");
+  msg.textContent = `Editing ${rec.date} (make changes then click Save)`;
+
+  scrollToDailyForm();
+}
+
+function deleteDaily(date){
+  const ok = confirm(`Delete daily check-in for ${date}?`);
+  if(!ok) return;
+
+  const idx = dailyLogs.findIndex(d=>d.date===date);
+  if(idx < 0) return;
+
+  dailyLogs.splice(idx, 1);
+  saveDailyToStorage();
+
+  // If you were editing that date, clear the form
+  if(document.getElementById("dailyDate").value === date){
+    clearDailyForm();
+  }
 
   renderDailyList();
   renderBibleDates();
@@ -1112,7 +1161,7 @@ function renderDailyList(){
     return;
   }
 
-  const items = dailyLogs.slice(0,8).map(d=>{
+  const items = dailyLogs.slice(0,10).map(d=>{
     const checks = [
       d.bibleRead ? "✝️ Bible" : null,
       d.workout ? "🏃 Move" : null,
@@ -1132,6 +1181,11 @@ function renderDailyList(){
         ${bibleNote}
         ${d.workoutText ? `<div class="note">Workout: ${escapeHtml(d.workoutText)}</div>` : ``}
         ${d.journal ? `<div class="note">${escapeHtml(d.journal)}</div>` : `<div class="small">No journal note.</div>`}
+
+        <div class="actions">
+          <button class="btn light" onclick="editDaily('${d.date}')">Edit</button>
+          <button class="btn secondary" onclick="deleteDaily('${d.date}')">Delete</button>
+        </div>
       </div>
     `;
   }).join("");
@@ -1224,7 +1278,6 @@ function deleteWeighIn(date){
   updateKPIs();
 }
 
-/* Chart (simple canvas line) */
 function renderWeighInChart(){
   const canvas = document.getElementById("weighInChart");
   const hint = document.getElementById("chartHint");
@@ -1286,7 +1339,6 @@ function renderWeighInChart(){
   if(hint) hint.textContent = `Start: ${GOAL.startWeight} → Latest: ${latest.weight} (Change: ${change.toFixed(1)} lbs)`;
 }
 
-/* Monthly milestone (linear target to year end) */
 function renderMonthlyMilestone(referenceDateStr){
   const box = document.getElementById("milestoneText");
   if(!box) return;
@@ -1334,7 +1386,6 @@ function getTargetWeightForMonth(dateStr){
 ======================= */
 function updateKPIs(){
   document.getElementById("kpiStartGoal").textContent = `${GOAL.startWeight} → ${GOAL.targetWeight}`;
-
   document.getElementById("kpiDaysLogged").textContent = String(dailyLogs.length);
 
   if(fridayWeighIns.length === 0){
