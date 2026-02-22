@@ -1,7 +1,4 @@
-<html>
-        <head><title>Downloaded HTML</title></head>
-        <body>
-            <pre style="white-space: pre-wrap; word-wrap: break-word;"><!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
@@ -397,6 +394,7 @@
           <div style="display:flex; gap:8px; flex-wrap:wrap;">
             <button class="btn light" onclick="showPsalm()">Psalm 23</button>
             <button class="btn light" onclick="showProverbs()">Proverbs 23</button>
+            <button class="btn light" onclick="showProverbs31()">Proverbs 31</button>
           </div>
         </div>
 
@@ -425,8 +423,45 @@
 
         <div class="checkRow">
           <label><input type="checkbox" id="dailyWorkout"> Workout / Move ✅</label>
-          <label><input type="checkbox" id="dailyWater"> Water Goal ✅</label>
           <label><input type="checkbox" id="dailyFood"> Food On Plan ✅</label>
+        </div>
+
+        <!-- ✅ NEW: Workout details, calories, meals, water 40oz+ -->
+        <div class="divider"></div>
+
+        <div class="row">
+          <div class="field">
+            <label>Workout Done (type it)</label>
+            <input id="dailyWorkoutText" placeholder="Example: 30 min walk + squats + bands" />
+            <div class="small">This helps you see what worked later.</div>
+          </div>
+
+          <div class="field">
+            <label>Calories (estimate)</label>
+            <input id="dailyCalories" type="number" min="0" step="1" placeholder="Example: 1500" />
+            <div class="small">Estimates are fine. Consistency matters most.</div>
+          </div>
+        </div>
+
+        <div class="row" style="margin-top:10px;">
+          <div class="field">
+            <label>Meals Today</label>
+            <select id="dailyMeals">
+              <option value="">Select…</option>
+              <option value="OMAD">OMAD (1 meal)</option>
+              <option value="2MAD">2MAD (2 meals)</option>
+              <option value="3MAD">3MAD (3 meals)</option>
+              <option value="MRE">MRE (multiple small meals)</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label>Water</label>
+            <div class="checkRow" style="margin-top:6px;">
+              <label><input type="checkbox" id="dailyWater40"> Drank more than 40 oz ✅</label>
+            </div>
+            <div class="small">Just yes/no. Keep it simple.</div>
+          </div>
         </div>
 
         <div style="margin-top:10px;">
@@ -511,7 +546,7 @@ const KEY_AUTH_USER = "LBH_auth_user_v1";
 const KEY_AUTH_HASH = "LBH_auth_hash_v1";
 const KEY_SESSION   = "LBH_session_v1";
 
-const KEY_DAILY      = "LBH_dailyLogs_v1";
+const KEY_DAILY      = "LBH_dailyLogs_v2";        // bumped version to store new fields safely
 const KEY_WEIGHINS   = "LBH_fridayWeighIns_v1";
 const KEY_SCRIPTURE  = "LBH_scriptureChoice_v1";
 
@@ -562,6 +597,39 @@ const PROVERBS_23_KJV =
 33 Thine eyes shall behold strange women, and thine heart shall utter perverse things.
 34 Yea, thou shalt be as he that lieth down in the midst of the sea, or as he that lieth upon the top of a mast.
 35 They have stricken me, shalt thou say, and I was not sick; they have beaten me, and I felt it not: when shall I awake? I will seek it yet again.`;
+
+const PROVERBS_31_KJV =
+`1 The words of king Lemuel, the prophecy that his mother taught him.
+2 What, my son? and what, the son of my womb? and what, the son of my vows?
+3 Give not thy strength unto women, nor thy ways to that which destroyeth kings.
+4 It is not for kings, O Lemuel, it is not for kings to drink wine; nor for princes strong drink:
+5 Lest they drink, and forget the law, and pervert the judgment of any of the afflicted.
+6 Give strong drink unto him that is ready to perish, and wine unto those that be of heavy hearts.
+7 Let him drink, and forget his poverty, and remember his misery no more.
+8 Open thy mouth for the dumb in the cause of all such as are appointed to destruction.
+9 Open thy mouth, judge righteously, and plead the cause of the poor and needy.
+10 Who can find a virtuous woman? for her price is far above rubies.
+11 The heart of her husband doth safely trust in her, so that he shall have no need of spoil.
+12 She will do him good and not evil all the days of her life.
+13 She seeketh wool, and flax, and worketh willingly with her hands.
+14 She is like the merchants' ships; she bringeth her food from afar.
+15 She riseth also while it is yet night, and giveth meat to her household, and a portion to her maidens.
+16 She considereth a field, and buyeth it: with the fruit of her hands she planteth a vineyard.
+17 She girdeth her loins with strength, and strengtheneth her arms.
+18 She perceiveth that her merchandise is good: her candle goeth not out by night.
+19 She layeth her hands to the spindle, and her hands hold the distaff.
+20 She stretcheth out her hand to the poor; yea, she reacheth forth her hands to the needy.
+21 She is not afraid of the snow for her household: for all her household are clothed with scarlet.
+22 She maketh herself coverings of tapestry; her clothing is silk and purple.
+23 Her husband is known in the gates, when he sitteth among the elders of the land.
+24 She maketh fine linen, and selleth it; and delivereth girdles unto the merchant.
+25 Strength and honour are her clothing; and she shall rejoice in time to come.
+26 She openeth her mouth with wisdom; and in her tongue is the law of kindness.
+27 She looketh well to the ways of her household, and eateth not the bread of idleness.
+28 Her children arise up, and call her blessed; her husband also, and he praiseth her.
+29 Many daughters have done virtuously, but thou excellest them all.
+30 Favour is deceitful, and beauty is vain: but a woman that feareth the LORD, she shall be praised.
+31 Give her of the fruit of her hands; and let her own works praise her in the gates.`;
 
 /* =======================
    STATE
@@ -711,13 +779,14 @@ function initApp(username){
 
   document.getElementById("helloUser").textContent = `Hi, ${username} 💜`;
   document.getElementById("goalSubtitle").textContent =
-    `Goal: ${GOAL.startWeight} → ${GOAL.targetWeight} by ${GOAL.endDate} | Friday weigh-ins only`;
+    `Goal: ${GOAL.startWeight} → ${GOAL.targetWeight} by ${GOAL.endDate} | Friday weigh-ins + daily habits`;
 
   setDefaultDailyDate();
   setDefaultFridayDate();
 
-  // scripture render
-  if(currentScripture === "proverbs") showProverbs();
+  // Scripture render
+  if(currentScripture === "proverbs31") showProverbs31();
+  else if(currentScripture === "proverbs") showProverbs();
   else showPsalm();
 
   // load last bible read checkbox for today (from daily logs if exists)
@@ -759,6 +828,13 @@ function showProverbs(){
   document.getElementById("scriptureText").textContent = PROVERBS_23_KJV;
 }
 
+function showProverbs31(){
+  currentScripture = "proverbs31";
+  localStorage.setItem(KEY_SCRIPTURE, currentScripture);
+  document.getElementById("scriptureTitle").textContent = "Proverbs 31 (KJV)";
+  document.getElementById("scriptureText").textContent = PROVERBS_31_KJV;
+}
+
 /* =======================
    DAILY CHECK-IN
 ======================= */
@@ -774,13 +850,21 @@ function saveDaily(){
   const date = (document.getElementById("dailyDate").value || "").trim();
   if(!date){ return; }
 
+  const caloriesRaw = parseInt(document.getElementById("dailyCalories").value, 10);
+  const caloriesVal = Number.isFinite(caloriesRaw) ? caloriesRaw : null;
+
   const entry = {
     date,
     workout: !!document.getElementById("dailyWorkout").checked,
-    water: !!document.getElementById("dailyWater").checked,
     foodOnPlan: !!document.getElementById("dailyFood").checked,
     journal: (document.getElementById("dailyJournal").value || "").trim(),
-    bibleRead: !!document.getElementById("bibleRead").checked
+    bibleRead: !!document.getElementById("bibleRead").checked,
+
+    // ✅ NEW fields
+    workoutText: (document.getElementById("dailyWorkoutText").value || "").trim(),
+    calories: caloriesVal,
+    meals: (document.getElementById("dailyMeals").value || "").trim(),
+    water40plus: !!document.getElementById("dailyWater40").checked
   };
 
   const idx = dailyLogs.findIndex(d=>d.date===date);
@@ -795,8 +879,12 @@ function saveDaily(){
   const msg = document.getElementById("dailyMsg");
   msg.textContent = "Saved. You showed up today 💜";
 
-  // clear journal box (optional)
+  // clear inputs (optional)
   document.getElementById("dailyJournal").value = "";
+  document.getElementById("dailyWorkoutText").value = "";
+  document.getElementById("dailyCalories").value = "";
+  document.getElementById("dailyMeals").value = "";
+  document.getElementById("dailyWater40").checked = false;
 
   renderDailyList();
   updateKPIs();
@@ -811,18 +899,21 @@ function renderDailyList(){
     return;
   }
 
-  const items = dailyLogs.slice(0,6).map(d=>{
+  const items = dailyLogs.slice(0,8).map(d=>{
     const checks = [
       d.bibleRead ? "✝️ Bible" : null,
       d.workout ? "🏃 Move" : null,
-      d.water ? "💧 Water" : null,
-      d.foodOnPlan ? "🍽 On plan" : null
+      d.foodOnPlan ? "🍽 On plan" : null,
+      d.water40plus ? "💧 40oz+" : null,
+      d.meals ? `🍽 ${d.meals}` : null,
+      (typeof d.calories === "number") ? `🔥 ${d.calories} cal` : null
     ].filter(Boolean).join(" • ");
 
     return `
       <div class="listItem">
         <div class="meta">${d.date}${checks ? " — " + checks : ""}</div>
-        ${d.journal ? `<div class="note">${escapeHtml(d.journal)}</div>` : `<div class="small">No note.</div>`}
+        ${d.workoutText ? `<div class="note">Workout: ${escapeHtml(d.workoutText)}</div>` : ``}
+        ${d.journal ? `<div class="note">${escapeHtml(d.journal)}</div>` : `<div class="small">No journal note.</div>`}
       </div>
     `;
   }).join("");
@@ -977,10 +1068,9 @@ function renderWeighInChart(){
     ctx.beginPath(); ctx.arc(x,y,4,0,Math.PI*2); ctx.fill();
   });
 
-  const start = fridayWeighIns[0].weight;
-  const latest = fridayWeighIns[fridayWeighIns.length - 1].weight;
-  const change = (start - latest);
-  if(hint) hint.textContent = `Start: ${start} → Latest: ${latest} (Change: ${change.toFixed(1)} lbs)`;
+  const latest = fridayWeighIns[fridayWeighIns.length - 1];
+  const change = (GOAL.startWeight - latest.weight);
+  if(hint) hint.textContent = `Start: ${GOAL.startWeight} → Latest: ${latest.weight} (Change: ${change.toFixed(1)} lbs)`;
 }
 
 /* B) Monthly milestone (linear target to year end) */
@@ -1049,12 +1139,12 @@ function updateKPIs(){
 
   const startW = GOAL.startWeight;
   const change = (startW - latest.weight);
+
+  // Display as -X for loss, +X for gain
   const sign = change >= 0 ? "-" : "+";
   document.getElementById("kpiTotalChange").textContent = `${sign}${Math.abs(change).toFixed(1)} lbs`;
 }
 </script>
 
 </body>
-</html></pre>
-        </body>
-    </html>
+</html>
