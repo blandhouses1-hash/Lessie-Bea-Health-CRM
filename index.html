@@ -255,7 +255,7 @@
       padding: 18px;
     }
     .authCard{
-      max-width: 520px;
+      max-width: 560px;
       width:100%;
       background:#fff;
       border-radius: 18px;
@@ -277,12 +277,14 @@
       color: #9b1c1c;
       font-size: 13px;
       font-weight: 700;
+      white-space: pre-wrap;
     }
     .ok{
       margin-top: 10px;
       color: #14532d;
       font-size: 13px;
       font-weight: 700;
+      white-space: pre-wrap;
     }
   </style>
 </head>
@@ -299,47 +301,57 @@
 
     <div class="divider"></div>
 
-    <!-- First time setup -->
-    <div id="setupBox" class="hidden">
-      <h2>First-time setup (creates your login)</h2>
+    <div class="scriptureBox">
+      <strong>Important</strong>
+      <div class="small">
+        This version uses <strong>Firebase Email/Password</strong> so your Health CRM syncs across all devices.
+        Use a real email you can type on every device.
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Create Account -->
+    <div id="setupBox">
+      <h2>Create account (first time)</h2>
       <div class="row">
         <div class="field">
-          <label>Username</label>
-          <input id="setupUser" autocomplete="username" placeholder="Create a username" />
+          <label>Email</label>
+          <input id="setupUser" autocomplete="username" placeholder="you@email.com" />
         </div>
         <div class="field">
           <label>Password</label>
-          <input id="setupPass" type="password" autocomplete="new-password" placeholder="Create a password" />
+          <input id="setupPass" type="password" autocomplete="new-password" placeholder="Create a password (6+ chars)" />
         </div>
       </div>
-      <p class="authHint">
-        This login is saved on <strong>this browser/device</strong> (localStorage). If you clear browser data, you’ll need to set up again.
-      </p>
-      <button class="btn" onclick="createAccount()">Create Login</button>
+      <button class="btn" onclick="createAccount()">Create Account</button>
       <div id="setupMsg" class="error"></div>
     </div>
 
+    <div class="divider"></div>
+
     <!-- Login -->
-    <div id="loginBox" class="hidden">
+    <div id="loginBox">
       <h2>Login</h2>
       <div class="row">
         <div class="field">
-          <label>Username</label>
-          <input id="loginUser" autocomplete="username" placeholder="Enter username" />
+          <label>Email</label>
+          <input id="loginUser" autocomplete="username" placeholder="you@email.com" />
         </div>
         <div class="field">
           <label>Password</label>
-          <input id="loginPass" type="password" autocomplete="current-password" placeholder="Enter password" />
+          <input id="loginPass" type="password" autocomplete="current-password" placeholder="Your password" />
         </div>
       </div>
 
       <div class="row" style="margin-top:10px;">
         <button class="btn" onclick="login()">Login</button>
-        <button class="btn secondary" onclick="resetApp()">Reset App (if locked out)</button>
+        <button class="btn secondary" onclick="resetLocalCache()">Reset Local Cache</button>
       </div>
 
       <p class="authHint">
-        Reset clears this Health CRM login + data on this browser only.
+        Reset Local Cache does <strong>not</strong> delete your Firebase account. It only clears cached data in this browser.
+        If you forgot your password, you can reset it in Firebase Console (Authentication → Users) or tell me and I’ll add a “Reset password” button.
       </p>
       <div id="loginMsg" class="error"></div>
     </div>
@@ -406,6 +418,7 @@
         <div class="checkRow">
           <label><input type="checkbox" id="bibleRead"> Read Bible Today ✅</label>
         </div>
+        <div class="small">Tip: If you check “Read Bible Today”, hit “Save Daily Check-In” so it syncs.</div>
       </div>
 
       <div class="divider"></div>
@@ -562,7 +575,32 @@
   </div>
 </div>
 
+<!-- 🔥 Firebase SDKs (COMPAT – works with GitHub Pages) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
+
 <script>
+/* =======================
+   FIREBASE INIT (SEPARATE PROJECT)
+======================= */
+const firebaseConfig = {
+  apiKey: "AIzaSyAQ7Swd3ONHWYwHKxQEWvsE0sj_Xzv2AjE",
+  authDomain: "lessie-bea-health-crm.firebaseapp.com",
+  projectId: "lessie-bea-health-crm",
+  storageBucket: "lessie-bea-health-crm.firebasestorage.app",
+  messagingSenderId: "374888112294",
+  appId: "1:374888112294:web:a29b9f92c3c56b0f0e9467"
+};
+
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.firestore();
+let currentUid = null;
+
+let unsubDaily = null;
+let unsubWeigh = null;
+
 /* =======================
    CONFIG / GOAL
 ======================= */
@@ -574,15 +612,11 @@ const GOAL = {
 };
 
 /* =======================
-   STORAGE KEYS
+   LOCAL CACHE KEYS (optional)
 ======================= */
-const KEY_AUTH_USER = "LBH_auth_user_v1";
-const KEY_AUTH_HASH = "LBH_auth_hash_v1";
-const KEY_SESSION   = "LBH_session_v1";
-
-const KEY_DAILY      = "LBH_dailyLogs_v2";
-const KEY_WEIGHINS   = "LBH_fridayWeighIns_v1";
-const KEY_SCRIPTURE  = "LBH_scriptureChoice_v1";
+const KEY_DAILY_CACHE    = "LBH_dailyLogs_cache_v3";
+const KEY_WEIGHINS_CACHE = "LBH_fridayWeighIns_cache_v2";
+const KEY_SCRIPTURE      = "LBH_scriptureChoice_v1";
 
 /* =======================
    SCRIPTURES (KJV)
@@ -609,7 +643,7 @@ const PROVERBS_23_KJV =
 11 For their redeemer is mighty; he shall plead their cause with thee.
 12 Apply thine heart unto instruction, and thine ears to the words of knowledge.
 13 Withhold not correction from the child: for if thou beatest him with the rod, he shall not die.
-14 Thou shalt beat him with the rod, and shalt deliver his soul from hell.
+14 Thou shalt beatest him with the rod, and shalt deliver his soul from hell.
 15 My son, if thine heart be wise, my heart shall rejoice, even mine.
 16 Yea, my reins shall rejoice, when thy lips speak right things.
 17 Let not thine heart envy sinners: but be thou in the fear of the LORD all the day long.
@@ -666,10 +700,10 @@ const PROVERBS_31_KJV =
 31 Give her of the fruit of her hands; and let her own works praise her in the gates.`;
 
 /* =======================
-   STATE
+   STATE (in-memory)
 ======================= */
-let dailyLogs = JSON.parse(localStorage.getItem(KEY_DAILY)) || [];
-let fridayWeighIns = JSON.parse(localStorage.getItem(KEY_WEIGHINS)) || [];
+let dailyLogs = JSON.parse(localStorage.getItem(KEY_DAILY_CACHE)) || [];
+let fridayWeighIns = JSON.parse(localStorage.getItem(KEY_WEIGHINS_CACHE)) || [];
 let currentScripture = localStorage.getItem(KEY_SCRIPTURE) || "psalm";
 
 /* =======================
@@ -700,14 +734,6 @@ function sortWeighIns(){
   fridayWeighIns.sort((a,b)=> (a.date > b.date ? 1 : -1));
 }
 
-function saveDailyToStorage(){
-  localStorage.setItem(KEY_DAILY, JSON.stringify(dailyLogs));
-}
-
-function saveWeighInsToStorage(){
-  localStorage.setItem(KEY_WEIGHINS, JSON.stringify(fridayWeighIns));
-}
-
 function setDefaultDailyDate(){
   const el = document.getElementById("dailyDate");
   if(!el) return;
@@ -735,23 +761,17 @@ function scrollToDailyForm(){
   el.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-/* =======================
-   AUTH (client-side)
-======================= */
-async function sha256(text){
-  const enc = new TextEncoder().encode(text);
-  const buf = await crypto.subtle.digest("SHA-256", enc);
-  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,"0")).join("");
+function cacheToLocal(){
+  localStorage.setItem(KEY_DAILY_CACHE, JSON.stringify(dailyLogs));
+  localStorage.setItem(KEY_WEIGHINS_CACHE, JSON.stringify(fridayWeighIns));
 }
 
+/* =======================
+   UI SHOW/HIDE
+======================= */
 function showAuth(){
   document.getElementById("authScreen").classList.remove("hidden");
   document.getElementById("appScreen").classList.add("hidden");
-
-  const hasAccount = !!localStorage.getItem(KEY_AUTH_HASH) && !!localStorage.getItem(KEY_AUTH_USER);
-  document.getElementById("setupBox").classList.toggle("hidden", hasAccount);
-  document.getElementById("loginBox").classList.toggle("hidden", !hasAccount);
-
   document.getElementById("setupMsg").textContent = "";
   document.getElementById("loginMsg").textContent = "";
 }
@@ -761,68 +781,128 @@ function showApp(){
   document.getElementById("appScreen").classList.remove("hidden");
 }
 
+/* =======================
+   FIRESTORE PATH HELPERS
+======================= */
+function dailyCol(){
+  return db.collection("users").doc(currentUid).collection("health_daily");
+}
+function weighCol(){
+  return db.collection("users").doc(currentUid).collection("health_friday");
+}
+
+/* =======================
+   FIREBASE AUTH
+======================= */
 async function createAccount(){
-  const u = (document.getElementById("setupUser").value || "").trim();
-  const p = (document.getElementById("setupPass").value || "").trim();
+  const email = (document.getElementById("setupUser").value || "").trim();
+  const pass  = (document.getElementById("setupPass").value || "").trim();
   const msg = document.getElementById("setupMsg");
+  msg.textContent = "";
 
-  if(u.length < 3){ msg.textContent = "Username must be at least 3 characters."; return; }
-  if(p.length < 6){ msg.textContent = "Password must be at least 6 characters."; return; }
+  if(!email.includes("@")){
+    msg.textContent = "Please enter a valid email.";
+    return;
+  }
+  if(pass.length < 6){
+    msg.textContent = "Password must be at least 6 characters.";
+    return;
+  }
 
-  const hash = await sha256(u + "::" + p);
-  localStorage.setItem(KEY_AUTH_USER, u);
-  localStorage.setItem(KEY_AUTH_HASH, hash);
-  localStorage.setItem(KEY_SESSION, "1");
-
-  initApp(u);
+  try{
+    await auth.createUserWithEmailAndPassword(email, pass);
+    // onAuthStateChanged will handle showing app + syncing
+  }catch(e){
+    msg.textContent = `Create account failed:\n${e.message || e}`;
+  }
 }
 
 async function login(){
-  const u = (document.getElementById("loginUser").value || "").trim();
-  const p = (document.getElementById("loginPass").value || "").trim();
+  const email = (document.getElementById("loginUser").value || "").trim();
+  const pass  = (document.getElementById("loginPass").value || "").trim();
   const msg = document.getElementById("loginMsg");
+  msg.textContent = "";
 
-  const savedU = localStorage.getItem(KEY_AUTH_USER);
-  const savedH = localStorage.getItem(KEY_AUTH_HASH);
-  if(!savedU || !savedH){
-    msg.textContent = "No account found. Please set up again.";
-    showAuth();
+  if(!email.includes("@")){
+    msg.textContent = "Please enter your email.";
+    return;
+  }
+  if(!pass){
+    msg.textContent = "Please enter your password.";
     return;
   }
 
-  const hash = await sha256(u + "::" + p);
-  if(u !== savedU || hash !== savedH){
-    msg.textContent = "Wrong username or password.";
-    return;
+  try{
+    await auth.signInWithEmailAndPassword(email, pass);
+  }catch(e){
+    msg.textContent = `Login failed:\n${e.message || e}`;
   }
-
-  localStorage.setItem(KEY_SESSION, "1");
-  initApp(u);
 }
 
-function logout(){
-  localStorage.removeItem(KEY_SESSION);
-  showAuth();
+async function logout(){
+  try{
+    if(unsubDaily) { unsubDaily(); unsubDaily = null; }
+    if(unsubWeigh) { unsubWeigh(); unsubWeigh = null; }
+    currentUid = null;
+    await auth.signOut();
+  }catch(e){
+    alert(e.message || e);
+  }
 }
 
-function resetApp(){
-  const ok = confirm("This will clear the Health CRM login + data on this browser only. Continue?");
+function resetLocalCache(){
+  const ok = confirm("This clears cached data on THIS device only. Your Firebase cloud data stays safe. Continue?");
   if(!ok) return;
-
-  [KEY_AUTH_USER, KEY_AUTH_HASH, KEY_SESSION, KEY_DAILY, KEY_WEIGHINS, KEY_SCRIPTURE].forEach(k=>localStorage.removeItem(k));
+  localStorage.removeItem(KEY_DAILY_CACHE);
+  localStorage.removeItem(KEY_WEIGHINS_CACHE);
   dailyLogs = [];
   fridayWeighIns = [];
-  currentScripture = "psalm";
-  showAuth();
+  renderDailyList();
+  renderWeighInList();
+  renderWeighInChart();
+  renderBibleDates();
+  updateKPIs();
+}
+
+/* =======================
+   LIVE SYNC (Firestore onSnapshot)
+======================= */
+function startSync(){
+  if(!currentUid) return;
+
+  if(unsubDaily) unsubDaily();
+  if(unsubWeigh) unsubWeigh();
+
+  unsubDaily = dailyCol().orderBy("date","desc").onSnapshot((snap)=>{
+    dailyLogs = snap.docs.map(d=>d.data());
+    cacheToLocal();
+    syncBibleCheckboxForToday();
+    renderDailyList();
+    renderBibleDates();
+    updateKPIs();
+  }, (err)=>{
+    console.error(err);
+  });
+
+  unsubWeigh = weighCol().orderBy("date","asc").onSnapshot((snap)=>{
+    fridayWeighIns = snap.docs.map(d=>d.data());
+    cacheToLocal();
+    renderWeighInList();
+    renderWeighInChart();
+    renderMonthlyMilestone(getLatestWeighInDate());
+    updateKPIs();
+  }, (err)=>{
+    console.error(err);
+  });
 }
 
 /* =======================
    APP INIT
 ======================= */
-function initApp(username){
+function initApp(displayName){
   showApp();
 
-  document.getElementById("helloUser").textContent = `Hi, ${username} 💜`;
+  document.getElementById("helloUser").textContent = `Hi, ${displayName} 💜`;
   document.getElementById("goalSubtitle").textContent =
     `Goal: ${GOAL.startWeight} → ${GOAL.targetWeight} by ${GOAL.endDate} | Friday weigh-ins + daily habits`;
 
@@ -834,24 +914,30 @@ function initApp(username){
   else if(currentScripture === "proverbs") showProverbs();
   else showPsalm();
 
-  syncBibleCheckboxForToday();
-
+  // Render cached immediately (so it feels fast)
   renderDailyList();
   renderWeighInList();
   renderWeighInChart();
   renderMonthlyMilestone(getLatestWeighInDate());
   renderBibleDates();
   updateKPIs();
+
+  // Then start live sync (cloud)
+  startSync();
 }
 
 window.addEventListener("load", ()=>{
-  const hasAccount = !!localStorage.getItem(KEY_AUTH_HASH) && !!localStorage.getItem(KEY_AUTH_USER);
-  const session = localStorage.getItem(KEY_SESSION) === "1";
-  if(hasAccount && session){
-    initApp(localStorage.getItem(KEY_AUTH_USER));
-  } else {
-    showAuth();
-  }
+  showAuth();
+
+  auth.onAuthStateChanged((user)=>{
+    if(user){
+      currentUid = user.uid;
+      initApp(user.email || "Mrs. Starch");
+    } else {
+      currentUid = null;
+      showAuth();
+    }
+  });
 });
 
 /* =======================
@@ -879,15 +965,38 @@ function showProverbs31(){
 }
 
 /* =======================
-   BIBLE DATES LOG
+   FIRESTORE WRITE HELPERS
 ======================= */
-function saveBibleLog(){
+async function upsertDaily(entry){
+  if(!currentUid){ alert("Please login first."); return; }
+  await dailyCol().doc(entry.date).set(entry, { merge: true });
+}
+
+async function deleteDailyDoc(date){
+  if(!currentUid){ alert("Please login first."); return; }
+  await dailyCol().doc(date).delete();
+}
+
+async function upsertWeigh(entry){
+  if(!currentUid){ alert("Please login first."); return; }
+  await weighCol().doc(entry.date).set(entry, { merge: true });
+}
+
+async function deleteWeighDoc(date){
+  if(!currentUid){ alert("Please login first."); return; }
+  await weighCol().doc(date).delete();
+}
+
+/* =======================
+   BIBLE DATES LOG (SYNC)
+======================= */
+async function saveBibleLog(){
   const date = (document.getElementById("bibleLogDate").value || "").trim();
   const note = (document.getElementById("bibleLogNote").value || "").trim();
   if(!date){ alert("Please pick a date."); return; }
 
-  const idx = dailyLogs.findIndex(d=>d.date===date);
-  const base = idx >= 0 ? dailyLogs[idx] : {
+  // base from existing daily record if present
+  const existing = dailyLogs.find(d=>d.date===date) || {
     date,
     workout: false,
     foodOnPlan: false,
@@ -900,33 +1009,32 @@ function saveBibleLog(){
   };
 
   const updated = {
-    ...base,
+    ...existing,
+    date,
     bibleRead: true,
-    bibleNote: note || (base.bibleNote || "")
+    bibleNote: note || (existing.bibleNote || "")
   };
 
-  if(idx >= 0) dailyLogs[idx] = updated;
-  else dailyLogs.push(updated);
+  try{
+    await upsertDaily(updated);
 
-  dailyLogs.sort((a,b)=> (a.date < b.date ? 1 : -1));
-  saveDailyToStorage();
+    const today = toISODate(new Date());
+    if(date === today){
+      const bible = document.getElementById("bibleRead");
+      if(bible) bible.checked = true;
+    }
 
-  const today = toISODate(new Date());
-  if(date === today){
-    const bible = document.getElementById("bibleRead");
-    if(bible) bible.checked = true;
+    document.getElementById("bibleLogNote").value = "";
+  }catch(e){
+    alert(e.message || e);
   }
-
-  document.getElementById("bibleLogNote").value = "";
-  renderBibleDates();
-  renderDailyList();
-  updateKPIs();
 }
 
 function getBibleReadDatesSortedAsc(){
   const dates = dailyLogs
     .filter(d => d && d.date && d.bibleRead === true)
     .map(d => d.date);
+
   const uniq = Array.from(new Set(dates));
   uniq.sort((a,b)=> (a > b ? 1 : -1));
   return uniq;
@@ -992,14 +1100,13 @@ function editBibleDate(date){
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
-function deleteBibleDate(date){
+async function deleteBibleDate(date){
   const ok = confirm("Remove Bible-read mark for this date?");
   if(!ok) return;
 
-  const idx = dailyLogs.findIndex(d=>d.date===date);
-  if(idx < 0) return;
+  const d = dailyLogs.find(x=>x.date===date);
+  if(!d) return;
 
-  const d = dailyLogs[idx];
   const hasOtherData =
     (d.workout === true) ||
     (d.foodOnPlan === true) ||
@@ -1009,28 +1116,25 @@ function deleteBibleDate(date){
     (d.workoutText && d.workoutText.trim() !== "") ||
     (d.journal && d.journal.trim() !== "");
 
-  if(hasOtherData){
-    dailyLogs[idx] = { ...d, bibleRead: false, bibleNote: "" };
-  } else {
-    dailyLogs.splice(idx, 1);
+  try{
+    if(hasOtherData){
+      await upsertDaily({ ...d, bibleRead: false, bibleNote: "" });
+    } else {
+      await deleteDailyDoc(date);
+    }
+
+    const today = toISODate(new Date());
+    if(date === today){
+      const bible = document.getElementById("bibleRead");
+      if(bible) bible.checked = false;
+    }
+  }catch(e){
+    alert(e.message || e);
   }
-
-  dailyLogs.sort((a,b)=> (a.date < b.date ? 1 : -1));
-  saveDailyToStorage();
-
-  const today = toISODate(new Date());
-  if(date === today){
-    const bible = document.getElementById("bibleRead");
-    if(bible) bible.checked = false;
-  }
-
-  renderBibleDates();
-  renderDailyList();
-  updateKPIs();
 }
 
 /* =======================
-   DAILY CHECK-IN (NOW WITH EDIT + DELETE)
+   DAILY CHECK-IN (SYNC + EDIT/DELETE)
 ======================= */
 function syncBibleCheckboxForToday(){
   const today = toISODate(new Date());
@@ -1049,22 +1153,21 @@ function clearDailyForm(){
   document.getElementById("dailyMeals").value = "";
   document.getElementById("dailyWater40").checked = false;
   document.getElementById("dailyJournal").value = "";
-
-  // leave bibleRead checkbox as-is for today
-  const msg = document.getElementById("dailyMsg");
-  msg.textContent = "";
+  document.getElementById("dailyMsg").textContent = "";
 }
 
-function saveDaily(){
+async function saveDaily(){
   const date = (document.getElementById("dailyDate").value || "").trim();
   if(!date){ return; }
+  if(!currentUid){ alert("Please login first."); return; }
 
   const caloriesRaw = parseInt(document.getElementById("dailyCalories").value, 10);
   const caloriesVal = Number.isFinite(caloriesRaw) ? caloriesRaw : null;
 
-  const idx = dailyLogs.findIndex(d=>d.date===date);
+  const existing = dailyLogs.find(d=>d.date===date) || {};
 
   const entry = {
+    ...existing,
     date,
     workout: !!document.getElementById("dailyWorkout").checked,
     foodOnPlan: !!document.getElementById("dailyFood").checked,
@@ -1077,31 +1180,20 @@ function saveDaily(){
     water40plus: !!document.getElementById("dailyWater40").checked
   };
 
-  // preserve bibleNote if already exists
-  if(idx >= 0 && dailyLogs[idx] && dailyLogs[idx].bibleNote){
-    entry.bibleNote = dailyLogs[idx].bibleNote;
+  try{
+    await upsertDaily(entry);
+
+    const msg = document.getElementById("dailyMsg");
+    msg.textContent = "Saved to cloud. You showed up today 💜";
+
+    document.getElementById("dailyWorkoutText").value = "";
+    document.getElementById("dailyCalories").value = "";
+    document.getElementById("dailyMeals").value = "";
+    document.getElementById("dailyWater40").checked = false;
+    document.getElementById("dailyJournal").value = "";
+  }catch(e){
+    alert(e.message || e);
   }
-
-  if(idx >= 0) dailyLogs[idx] = { ...dailyLogs[idx], ...entry };
-  else dailyLogs.push(entry);
-
-  dailyLogs.sort((a,b)=> (a.date < b.date ? 1 : -1));
-  saveDailyToStorage();
-
-  const msg = document.getElementById("dailyMsg");
-  msg.textContent = "Saved. You showed up today 💜";
-
-  // After save, keep the date (so you can keep editing same day if you want)
-  // But we can clear the text fields to reduce clutter:
-  document.getElementById("dailyWorkoutText").value = "";
-  document.getElementById("dailyCalories").value = "";
-  document.getElementById("dailyMeals").value = "";
-  document.getElementById("dailyWater40").checked = false;
-  document.getElementById("dailyJournal").value = "";
-
-  renderDailyList();
-  renderBibleDates();
-  updateKPIs();
 }
 
 function editDaily(date){
@@ -1119,37 +1211,29 @@ function editDaily(date){
 
   document.getElementById("dailyJournal").value = rec.journal || "";
 
-  // If editing TODAY, sync the big Bible checkbox
   const today = toISODate(new Date());
   if(rec.date === today){
     const bible = document.getElementById("bibleRead");
     if(bible) bible.checked = !!rec.bibleRead;
   }
 
-  const msg = document.getElementById("dailyMsg");
-  msg.textContent = `Editing ${rec.date} (make changes then click Save)`;
-
+  document.getElementById("dailyMsg").textContent = `Editing ${rec.date} (make changes then click Save)`;
   scrollToDailyForm();
 }
 
-function deleteDaily(date){
+async function deleteDaily(date){
   const ok = confirm(`Delete daily check-in for ${date}?`);
   if(!ok) return;
 
-  const idx = dailyLogs.findIndex(d=>d.date===date);
-  if(idx < 0) return;
+  try{
+    await deleteDailyDoc(date);
 
-  dailyLogs.splice(idx, 1);
-  saveDailyToStorage();
-
-  // If you were editing that date, clear the form
-  if(document.getElementById("dailyDate").value === date){
-    clearDailyForm();
+    if(document.getElementById("dailyDate").value === date){
+      clearDailyForm();
+    }
+  }catch(e){
+    alert(e.message || e);
   }
-
-  renderDailyList();
-  renderBibleDates();
-  updateKPIs();
 }
 
 function renderDailyList(){
@@ -1194,7 +1278,7 @@ function renderDailyList(){
 }
 
 /* =======================
-   FRIDAY WEIGH-INS
+   FRIDAY WEIGH-INS (SYNC)
 ======================= */
 function getLatestWeighInDate(){
   if(fridayWeighIns.length === 0) return null;
@@ -1202,13 +1286,14 @@ function getLatestWeighInDate(){
   return fridayWeighIns[fridayWeighIns.length - 1].date;
 }
 
-function saveFridayWeighIn(){
+async function saveFridayWeighIn(){
   const date = (document.getElementById("fridayDate").value || "").trim();
   const w = parseFloat(document.getElementById("fridayWeight").value);
   const prayer = (document.getElementById("fridayPrayer").value || "").trim();
 
   if(!date){ alert("Please choose a date."); return; }
   if(!Number.isFinite(w) || w <= 0){ alert("Please enter a valid weight."); return; }
+  if(!currentUid){ alert("Please login first."); return; }
 
   if(!isFriday(date)){
     const ok = confirm("That date is not a Friday. Save anyway?");
@@ -1217,21 +1302,13 @@ function saveFridayWeighIn(){
 
   const entry = { date, weight: w, prayer };
 
-  const idx = fridayWeighIns.findIndex(x=>x.date===date);
-  if(idx >= 0) fridayWeighIns[idx] = entry;
-  else fridayWeighIns.push(entry);
-
-  sortWeighIns();
-  saveWeighInsToStorage();
-
-  document.getElementById("fridayWeight").value = "";
-
-  renderWeighInList();
-  renderWeighInChart();
-  renderMonthlyMilestone(date);
-  updateKPIs();
-
-  document.getElementById("chartHint").textContent = "Saved. Weekly data > daily emotions 💜";
+  try{
+    await upsertWeigh(entry);
+    document.getElementById("fridayWeight").value = "";
+    document.getElementById("chartHint").textContent = "Saved to cloud. Weekly data > daily emotions 💜";
+  }catch(e){
+    alert(e.message || e);
+  }
 }
 
 function renderWeighInList(){
@@ -1267,15 +1344,14 @@ function editWeighIn(date){
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
-function deleteWeighIn(date){
+async function deleteWeighIn(date){
   const ok = confirm("Delete this weigh-in?");
   if(!ok) return;
-  fridayWeighIns = fridayWeighIns.filter(w=>w.date!==date);
-  saveWeighInsToStorage();
-  renderWeighInList();
-  renderWeighInChart();
-  renderMonthlyMilestone(getLatestWeighInDate());
-  updateKPIs();
+  try{
+    await deleteWeighDoc(date);
+  }catch(e){
+    alert(e.message || e);
+  }
 }
 
 function renderWeighInChart(){
