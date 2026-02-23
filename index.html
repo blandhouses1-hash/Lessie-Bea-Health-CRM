@@ -304,8 +304,8 @@
     <div class="scriptureBox">
       <strong>Important</strong>
       <div class="small">
-        This version uses <strong>Firebase Email/Password</strong> so your Health CRM syncs across all devices.
-        Use a real email you can type on every device.
+        This version saves your data to <strong>Firebase Firestore</strong> so it syncs across all devices.
+        Use the same email/password everywhere.
       </div>
     </div>
 
@@ -350,8 +350,7 @@
       </div>
 
       <p class="authHint">
-        Reset Local Cache does <strong>not</strong> delete your Firebase account. It only clears cached data in this browser.
-        If you forgot your password, you can reset it in Firebase Console (Authentication → Users) or tell me and I’ll add a “Reset password” button.
+        Reset Local Cache does <strong>not</strong> delete your cloud data. It only clears cached data on THIS device.
       </p>
       <div id="loginMsg" class="error"></div>
     </div>
@@ -418,7 +417,7 @@
         <div class="checkRow">
           <label><input type="checkbox" id="bibleRead"> Read Bible Today ✅</label>
         </div>
-        <div class="small">Tip: If you check “Read Bible Today”, hit “Save Daily Check-In” so it syncs.</div>
+        <div class="small">Tip: Check it, then click “Save Daily Check-In” so it syncs.</div>
       </div>
 
       <div class="divider"></div>
@@ -575,14 +574,14 @@
   </div>
 </div>
 
-<!-- 🔥 Firebase SDKs (COMPAT – works with GitHub Pages) -->
+<!-- ✅ Firebase SDKs (COMPAT – works with GitHub Pages) -->
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
 
 <script>
 /* =======================
-   FIREBASE INIT (SEPARATE PROJECT)
+   FIREBASE INIT
 ======================= */
 const firebaseConfig = {
   apiKey: "AIzaSyAQ7Swd3ONHWYwHKxQEWvsE0sj_Xzv2AjE",
@@ -596,10 +595,6 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const db = firebase.firestore();
-let currentUid = null;
-
-let unsubDaily = null;
-let unsubWeigh = null;
 
 /* =======================
    CONFIG / GOAL
@@ -612,11 +607,11 @@ const GOAL = {
 };
 
 /* =======================
-   LOCAL CACHE KEYS (optional)
+   LOCAL CACHE (OPTIONAL FAST LOAD)
 ======================= */
-const KEY_DAILY_CACHE    = "LBH_dailyLogs_cache_v3";
-const KEY_WEIGHINS_CACHE = "LBH_fridayWeighIns_cache_v2";
-const KEY_SCRIPTURE      = "LBH_scriptureChoice_v1";
+const KEY_DAILY_CACHE    = "LBH_dailyLogs_cache_v4";
+const KEY_WEIGHINS_CACHE = "LBH_fridayWeighIns_cache_v4";
+const KEY_SCRIPTURE      = "LBH_scriptureChoice_v2";
 
 /* =======================
    SCRIPTURES (KJV)
@@ -643,7 +638,7 @@ const PROVERBS_23_KJV =
 11 For their redeemer is mighty; he shall plead their cause with thee.
 12 Apply thine heart unto instruction, and thine ears to the words of knowledge.
 13 Withhold not correction from the child: for if thou beatest him with the rod, he shall not die.
-14 Thou shalt beatest him with the rod, and shalt deliver his soul from hell.
+14 Thou shalt beat him with the rod, and shalt deliver his soul from hell.
 15 My son, if thine heart be wise, my heart shall rejoice, even mine.
 16 Yea, my reins shall rejoice, when thy lips speak right things.
 17 Let not thine heart envy sinners: but be thou in the fear of the LORD all the day long.
@@ -700,11 +695,15 @@ const PROVERBS_31_KJV =
 31 Give her of the fruit of her hands; and let her own works praise her in the gates.`;
 
 /* =======================
-   STATE (in-memory)
+   STATE
 ======================= */
+let currentUid = null;
 let dailyLogs = JSON.parse(localStorage.getItem(KEY_DAILY_CACHE)) || [];
 let fridayWeighIns = JSON.parse(localStorage.getItem(KEY_WEIGHINS_CACHE)) || [];
 let currentScripture = localStorage.getItem(KEY_SCRIPTURE) || "psalm";
+
+let unsubDaily = null;
+let unsubWeigh = null;
 
 /* =======================
    UTIL
@@ -730,14 +729,17 @@ function isFriday(dateStr){
   return d.getDay() === 5;
 }
 
-function sortWeighIns(){
+function sortWeighInsAsc(){
   fridayWeighIns.sort((a,b)=> (a.date > b.date ? 1 : -1));
+}
+
+function sortDailyDesc(){
+  dailyLogs.sort((a,b)=> (a.date < b.date ? 1 : -1));
 }
 
 function setDefaultDailyDate(){
   const el = document.getElementById("dailyDate");
-  if(!el) return;
-  el.value = toISODate(new Date());
+  if(el) el.value = toISODate(new Date());
 }
 
 function setDefaultFridayDate(){
@@ -751,14 +753,7 @@ function setDefaultFridayDate(){
 
 function setDefaultBibleLogDate(){
   const el = document.getElementById("bibleLogDate");
-  if(!el) return;
-  el.value = toISODate(new Date());
-}
-
-function scrollToDailyForm(){
-  const el = document.getElementById("dailyDate");
-  if(!el) return;
-  el.scrollIntoView({ behavior: "smooth", block: "start" });
+  if(el) el.value = toISODate(new Date());
 }
 
 function cacheToLocal(){
@@ -766,9 +761,6 @@ function cacheToLocal(){
   localStorage.setItem(KEY_WEIGHINS_CACHE, JSON.stringify(fridayWeighIns));
 }
 
-/* =======================
-   UI SHOW/HIDE
-======================= */
 function showAuth(){
   document.getElementById("authScreen").classList.remove("hidden");
   document.getElementById("appScreen").classList.add("hidden");
@@ -781,8 +773,14 @@ function showApp(){
   document.getElementById("appScreen").classList.remove("hidden");
 }
 
+function scrollToDailyForm(){
+  const el = document.getElementById("dailyDate");
+  if(!el) return;
+  el.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
 /* =======================
-   FIRESTORE PATH HELPERS
+   FIRESTORE PATHS
 ======================= */
 function dailyCol(){
   return db.collection("users").doc(currentUid).collection("health_daily");
@@ -792,7 +790,32 @@ function weighCol(){
 }
 
 /* =======================
-   FIREBASE AUTH
+   FIRESTORE WRITES
+======================= */
+async function upsertDaily(entry){
+  if(!currentUid) throw new Error("Not logged in");
+  if(!entry || !entry.date) throw new Error("Missing date");
+  await dailyCol().doc(entry.date).set(entry, { merge: true });
+}
+
+async function deleteDailyDoc(date){
+  if(!currentUid) throw new Error("Not logged in");
+  await dailyCol().doc(date).delete();
+}
+
+async function upsertWeigh(entry){
+  if(!currentUid) throw new Error("Not logged in");
+  if(!entry || !entry.date) throw new Error("Missing date");
+  await weighCol().doc(entry.date).set(entry, { merge: true });
+}
+
+async function deleteWeighDoc(date){
+  if(!currentUid) throw new Error("Not logged in");
+  await weighCol().doc(date).delete();
+}
+
+/* =======================
+   AUTH
 ======================= */
 async function createAccount(){
   const email = (document.getElementById("setupUser").value || "").trim();
@@ -811,7 +834,6 @@ async function createAccount(){
 
   try{
     await auth.createUserWithEmailAndPassword(email, pass);
-    // onAuthStateChanged will handle showing app + syncing
   }catch(e){
     msg.textContent = `Create account failed:\n${e.message || e}`;
   }
@@ -841,8 +863,8 @@ async function login(){
 
 async function logout(){
   try{
-    if(unsubDaily) { unsubDaily(); unsubDaily = null; }
-    if(unsubWeigh) { unsubWeigh(); unsubWeigh = null; }
+    if(unsubDaily){ unsubDaily(); unsubDaily = null; }
+    if(unsubWeigh){ unsubWeigh(); unsubWeigh = null; }
     currentUid = null;
     await auth.signOut();
   }catch(e){
@@ -851,7 +873,7 @@ async function logout(){
 }
 
 function resetLocalCache(){
-  const ok = confirm("This clears cached data on THIS device only. Your Firebase cloud data stays safe. Continue?");
+  const ok = confirm("This clears cached data on THIS device only. Your cloud data stays safe. Continue?");
   if(!ok) return;
   localStorage.removeItem(KEY_DAILY_CACHE);
   localStorage.removeItem(KEY_WEIGHINS_CACHE);
@@ -865,7 +887,7 @@ function resetLocalCache(){
 }
 
 /* =======================
-   LIVE SYNC (Firestore onSnapshot)
+   LIVE SYNC (THIS IS THE FIX)
 ======================= */
 function startSync(){
   if(!currentUid) return;
@@ -873,8 +895,10 @@ function startSync(){
   if(unsubDaily) unsubDaily();
   if(unsubWeigh) unsubWeigh();
 
+  // Daily logs: order by date desc
   unsubDaily = dailyCol().orderBy("date","desc").onSnapshot((snap)=>{
-    dailyLogs = snap.docs.map(d=>d.data());
+    dailyLogs = snap.docs.map(d=>d.data()).filter(Boolean);
+    sortDailyDesc();
     cacheToLocal();
     syncBibleCheckboxForToday();
     renderDailyList();
@@ -884,8 +908,10 @@ function startSync(){
     console.error(err);
   });
 
+  // Weigh-ins: order by date asc
   unsubWeigh = weighCol().orderBy("date","asc").onSnapshot((snap)=>{
-    fridayWeighIns = snap.docs.map(d=>d.data());
+    fridayWeighIns = snap.docs.map(d=>d.data()).filter(Boolean);
+    sortWeighInsAsc();
     cacheToLocal();
     renderWeighInList();
     renderWeighInChart();
@@ -914,7 +940,8 @@ function initApp(displayName){
   else if(currentScripture === "proverbs") showProverbs();
   else showPsalm();
 
-  // Render cached immediately (so it feels fast)
+  // Show cached immediately (fast feel)
+  syncBibleCheckboxForToday();
   renderDailyList();
   renderWeighInList();
   renderWeighInChart();
@@ -922,7 +949,7 @@ function initApp(displayName){
   renderBibleDates();
   updateKPIs();
 
-  // Then start live sync (cloud)
+  // Start Firestore sync (REAL sync across devices)
   startSync();
 }
 
@@ -965,37 +992,14 @@ function showProverbs31(){
 }
 
 /* =======================
-   FIRESTORE WRITE HELPERS
-======================= */
-async function upsertDaily(entry){
-  if(!currentUid){ alert("Please login first."); return; }
-  await dailyCol().doc(entry.date).set(entry, { merge: true });
-}
-
-async function deleteDailyDoc(date){
-  if(!currentUid){ alert("Please login first."); return; }
-  await dailyCol().doc(date).delete();
-}
-
-async function upsertWeigh(entry){
-  if(!currentUid){ alert("Please login first."); return; }
-  await weighCol().doc(entry.date).set(entry, { merge: true });
-}
-
-async function deleteWeighDoc(date){
-  if(!currentUid){ alert("Please login first."); return; }
-  await weighCol().doc(date).delete();
-}
-
-/* =======================
    BIBLE DATES LOG (SYNC)
 ======================= */
 async function saveBibleLog(){
   const date = (document.getElementById("bibleLogDate").value || "").trim();
   const note = (document.getElementById("bibleLogNote").value || "").trim();
   if(!date){ alert("Please pick a date."); return; }
+  if(!currentUid){ alert("Please login first."); return; }
 
-  // base from existing daily record if present
   const existing = dailyLogs.find(d=>d.date===date) || {
     date,
     workout: false,
@@ -1005,7 +1009,8 @@ async function saveBibleLog(){
     workoutText: "",
     calories: null,
     meals: "",
-    water40plus: false
+    water40plus: false,
+    bibleNote: ""
   };
 
   const updated = {
@@ -1034,7 +1039,6 @@ function getBibleReadDatesSortedAsc(){
   const dates = dailyLogs
     .filter(d => d && d.date && d.bibleRead === true)
     .map(d => d.date);
-
   const uniq = Array.from(new Set(dates));
   uniq.sort((a,b)=> (a > b ? 1 : -1));
   return uniq;
@@ -1134,7 +1138,7 @@ async function deleteBibleDate(date){
 }
 
 /* =======================
-   DAILY CHECK-IN (SYNC + EDIT/DELETE)
+   DAILY CHECK-IN (SYNC)
 ======================= */
 function syncBibleCheckboxForToday(){
   const today = toISODate(new Date());
@@ -1158,7 +1162,7 @@ function clearDailyForm(){
 
 async function saveDaily(){
   const date = (document.getElementById("dailyDate").value || "").trim();
-  if(!date){ return; }
+  if(!date) return;
   if(!currentUid){ alert("Please login first."); return; }
 
   const caloriesRaw = parseInt(document.getElementById("dailyCalories").value, 10);
@@ -1173,19 +1177,19 @@ async function saveDaily(){
     foodOnPlan: !!document.getElementById("dailyFood").checked,
     journal: (document.getElementById("dailyJournal").value || "").trim(),
     bibleRead: !!document.getElementById("bibleRead").checked,
-
     workoutText: (document.getElementById("dailyWorkoutText").value || "").trim(),
     calories: caloriesVal,
     meals: (document.getElementById("dailyMeals").value || "").trim(),
-    water40plus: !!document.getElementById("dailyWater40").checked
+    water40plus: !!document.getElementById("dailyWater40").checked,
+    bibleNote: existing.bibleNote || ""
   };
 
   try{
     await upsertDaily(entry);
 
-    const msg = document.getElementById("dailyMsg");
-    msg.textContent = "Saved to cloud. You showed up today 💜";
+    document.getElementById("dailyMsg").textContent = "Saved to cloud. You showed up today 💜";
 
+    // optional: clear text fields (reduces clutter)
     document.getElementById("dailyWorkoutText").value = "";
     document.getElementById("dailyCalories").value = "";
     document.getElementById("dailyMeals").value = "";
@@ -1245,6 +1249,8 @@ function renderDailyList(){
     return;
   }
 
+  sortDailyDesc();
+
   const items = dailyLogs.slice(0,10).map(d=>{
     const checks = [
       d.bibleRead ? "✝️ Bible" : null,
@@ -1282,7 +1288,7 @@ function renderDailyList(){
 ======================= */
 function getLatestWeighInDate(){
   if(fridayWeighIns.length === 0) return null;
-  sortWeighIns();
+  sortWeighInsAsc();
   return fridayWeighIns[fridayWeighIns.length - 1].date;
 }
 
@@ -1378,7 +1384,7 @@ function renderWeighInChart(){
     return;
   }
 
-  sortWeighIns();
+  sortWeighInsAsc();
   const weights = fridayWeighIns.map(x=>x.weight);
   const minW = Math.min(...weights);
   const maxW = Math.max(...weights);
@@ -1470,7 +1476,7 @@ function updateKPIs(){
     return;
   }
 
-  sortWeighIns();
+  sortWeighInsAsc();
   const latest = fridayWeighIns[fridayWeighIns.length - 1];
   document.getElementById("kpiLatestFriday").textContent = `${latest.weight} lbs`;
 
