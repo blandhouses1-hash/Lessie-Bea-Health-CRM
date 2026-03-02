@@ -531,6 +531,22 @@
       <div class="card">
         <h2>Friday Weigh-In ⚖️</h2>
 
+        <div class="scriptureBox" style="margin-bottom:12px;">
+          <strong>Fix a wrong weigh-in (safe)</strong>
+          <div class="small">
+            This does NOT erase your database — it only removes ONE weigh-in by date.
+            If you accidentally saved something like <b>144.8</b>, delete that date here.
+          </div>
+          <div class="row" style="margin-top:10px;">
+            <div class="field">
+              <label>Date to delete</label>
+              <input type="date" id="deleteWeighDate" />
+            </div>
+            <button class="btn secondary" onclick="deleteWeighInByDate()" style="height:42px;">Delete that weigh-in</button>
+          </div>
+          <div id="deleteWeighMsg" class="ok"></div>
+        </div>
+
         <div class="row">
           <div class="field">
             <label>Date (Friday)</label>
@@ -729,16 +745,6 @@ function isFriday(dateStr){
   return d.getDay() === 5;
 }
 
-/* ✅ NEW: choose the most recent TRUE Friday weigh-in for KPIs.
-   If none are true Fridays (or list empty), we fall back safely. */
-function getLatestTrueFridayWeighIn(){
-  if(!Array.isArray(fridayWeighIns) || fridayWeighIns.length === 0) return null;
-  sortWeighInsAsc();
-  const onlyFridays = fridayWeighIns.filter(w => w && w.date && isFriday(w.date));
-  if(onlyFridays.length > 0) return onlyFridays[onlyFridays.length - 1]; // most recent Friday
-  return fridayWeighIns[fridayWeighIns.length - 1]; // fallback: most recent entry
-}
-
 function sortWeighInsAsc(){
   fridayWeighIns.sort((a,b)=> (a.date > b.date ? 1 : -1));
 }
@@ -766,6 +772,16 @@ function setDefaultBibleLogDate(){
   if(el) el.value = toISODate(new Date());
 }
 
+function setDefaultDeleteWeighDate(){
+  const el = document.getElementById("deleteWeighDate");
+  if(!el) return;
+  // default to last Friday like the weigh-in date picker
+  const today = new Date();
+  const d = new Date(today);
+  while(d.getDay() !== 5) d.setDate(d.getDate()-1);
+  el.value = toISODate(d);
+}
+
 function cacheToLocal(){
   localStorage.setItem(KEY_DAILY_CACHE, JSON.stringify(dailyLogs));
   localStorage.setItem(KEY_WEIGHINS_CACHE, JSON.stringify(fridayWeighIns));
@@ -787,6 +803,15 @@ function scrollToDailyForm(){
   const el = document.getElementById("dailyDate");
   if(!el) return;
   el.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function formatChangeText(start, latest){
+  const diff = latest - start;
+  if(!Number.isFinite(diff)) return "—";
+  const abs = Math.abs(diff).toFixed(1);
+  if(diff < 0) return `Lost ${abs} lbs`;
+  if(diff > 0) return `Gained ${abs} lbs`;
+  return `No change`;
 }
 
 /* =======================
@@ -897,7 +922,7 @@ function resetLocalCache(){
 }
 
 /* =======================
-   LIVE SYNC (THIS IS THE FIX)
+   LIVE SYNC (REAL SYNC)
 ======================= */
 function startSync(){
   if(!currentUid) return;
@@ -945,6 +970,7 @@ function initApp(displayName){
   setDefaultDailyDate();
   setDefaultFridayDate();
   setDefaultBibleLogDate();
+  setDefaultDeleteWeighDate();
 
   if(currentScripture === "proverbs31") showProverbs31();
   else if(currentScripture === "proverbs") showProverbs();
@@ -1199,6 +1225,7 @@ async function saveDaily(){
 
     document.getElementById("dailyMsg").textContent = "Saved to cloud. You showed up today 💜";
 
+    // optional: clear text fields (reduces clutter)
     document.getElementById("dailyWorkoutText").value = "";
     document.getElementById("dailyCalories").value = "";
     document.getElementById("dailyMeals").value = "";
@@ -1297,8 +1324,10 @@ function renderDailyList(){
 ======================= */
 function getLatestWeighInDate(){
   if(fridayWeighIns.length === 0) return null;
-  sortWeighInsAsc();
-  return fridayWeighIns[fridayWeighIns.length - 1].date;
+  // return max date (safest)
+  const dates = fridayWeighIns.map(w => w && w.date).filter(Boolean);
+  dates.sort((a,b)=> (a > b ? 1 : -1));
+  return dates[dates.length - 1] || null;
 }
 
 async function saveFridayWeighIn(){
@@ -1309,6 +1338,25 @@ async function saveFridayWeighIn(){
   if(!date){ alert("Please choose a date."); return; }
   if(!Number.isFinite(w) || w <= 0){ alert("Please enter a valid weight."); return; }
   if(!currentUid){ alert("Please login first."); return; }
+
+  // ✅ Safety check to prevent accidental wrong weights
+  if (w < 80 || w > 500) {
+    alert("That weight looks off. Please re-check it.");
+    return;
+  }
+
+  // ✅ Optional: warn if weight changes too much from the last saved weigh-in
+  if (fridayWeighIns.length > 0) {
+    sortWeighInsAsc();
+    const last = fridayWeighIns[fridayWeighIns.length - 1];
+    if (last && typeof last.weight === "number") {
+      const diff = Math.abs(last.weight - w);
+      if (diff >= 15) {
+        const ok = confirm(`This is ${diff.toFixed(1)} lbs different than your last weigh-in (${last.weight}). Save anyway?`);
+        if (!ok) return;
+      }
+    }
+  }
 
   if(!isFriday(date)){
     const ok = confirm("That date is not a Friday. Save anyway?");
@@ -1326,6 +1374,24 @@ async function saveFridayWeighIn(){
   }
 }
 
+async function deleteWeighInByDate(){
+  const date = (document.getElementById("deleteWeighDate").value || "").trim();
+  const msg = document.getElementById("deleteWeighMsg");
+  if(msg) msg.textContent = "";
+  if(!date){ alert("Pick a date to delete."); return; }
+  if(!currentUid){ alert("Please login first."); return; }
+
+  const ok = confirm(`Delete weigh-in for ${date}? This only deletes that ONE record.`);
+  if(!ok) return;
+
+  try{
+    await deleteWeighDoc(date);
+    if(msg) msg.textContent = `Deleted weigh-in for ${date}.`;
+  }catch(e){
+    alert(e.message || e);
+  }
+}
+
 function renderWeighInList(){
   const wrap = document.getElementById("weighInList");
   if(!wrap) return;
@@ -1335,7 +1401,7 @@ function renderWeighInList(){
     return;
   }
 
-  const reversed = fridayWeighIns.slice().reverse();
+  const reversed = fridayWeighIns.slice().sort((a,b)=> (a.date < b.date ? 1 : -1));
   wrap.innerHTML = reversed.map(w=>{
     return `
       <div class="listItem">
@@ -1356,6 +1422,7 @@ function editWeighIn(date){
   document.getElementById("fridayDate").value = found.date;
   document.getElementById("fridayPrayer").value = found.prayer || "";
   document.getElementById("fridayWeight").value = found.weight;
+  document.getElementById("deleteWeighDate").value = found.date;
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
@@ -1426,8 +1493,8 @@ function renderWeighInChart(){
   });
 
   const latest = fridayWeighIns[fridayWeighIns.length - 1];
-  const change = (GOAL.startWeight - latest.weight);
-  if(hint) hint.textContent = `Start: ${GOAL.startWeight} → Latest: ${latest.weight} (Change: ${change.toFixed(1)} lbs)`;
+  const changeText = formatChangeText(GOAL.startWeight, latest.weight);
+  if(hint) hint.textContent = `Start: ${GOAL.startWeight} → Latest: ${latest.weight} (${changeText})`;
 }
 
 function renderMonthlyMilestone(referenceDateStr){
@@ -1473,25 +1540,24 @@ function getTargetWeightForMonth(dateStr){
 }
 
 /* =======================
-   KPIs (✅ FIXED)
-   - Uses the most recent TRUE Friday weigh-in (not a random non-Friday you saved)
+   KPIs (FIXED DISPLAY)
 ======================= */
 function updateKPIs(){
   document.getElementById("kpiStartGoal").textContent = `${GOAL.startWeight} → ${GOAL.targetWeight}`;
   document.getElementById("kpiDaysLogged").textContent = String(dailyLogs.length);
 
-  const latestFri = getLatestTrueFridayWeighIn();
-  if(!latestFri){
+  if(fridayWeighIns.length === 0){
     document.getElementById("kpiLatestFriday").textContent = "—";
     document.getElementById("kpiTotalChange").textContent = "—";
     return;
   }
 
-  document.getElementById("kpiLatestFriday").textContent = `${latestFri.weight} lbs`;
+  // latest by max date
+  const latestDate = getLatestWeighInDate();
+  const latest = fridayWeighIns.find(w => w.date === latestDate) || fridayWeighIns[fridayWeighIns.length - 1];
 
-  const change = (GOAL.startWeight - latestFri.weight); // positive = weight lost
-  const sign = change >= 0 ? "-" : "+";
-  document.getElementById("kpiTotalChange").textContent = `${sign}${Math.abs(change).toFixed(1)} lbs`;
+  document.getElementById("kpiLatestFriday").textContent = `${latest.weight} lbs`;
+  document.getElementById("kpiTotalChange").textContent = formatChangeText(GOAL.startWeight, latest.weight);
 }
 </script>
 
